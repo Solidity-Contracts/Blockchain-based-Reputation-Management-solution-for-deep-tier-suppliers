@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "./StakeholderRegistration.sol";
+import "./TransactionsAndLogisticsManagement.sol";
+import "./ComplianceMonitoring.sol";
+
+contract ReputationManagementContract {
+    address public owner;
+    StakeholderRegistrationContract stakeholderRegistrationContract;
+    TransactionsAndLogisticsManagementContract transactionsAndLogisticsManagementContract;
+    ComplianceMonitoringContract complianceMonitoringContract;
+
+    struct ReputationScore {
+        uint deliveryTimeliness;
+        uint transactionVolume;
+        uint esgScore;
+        uint productQuality;
+        uint supplierFeedback;
+        uint finalScore;
+    }
+
+    mapping(address => ReputationScore) public reputationScores;
+
+    event ProductQualityUpdated(address indexed entity, uint score);
+    event SupplierFeedbackUpdated(address indexed entity, uint score);
+    event ReputationScoreCalculated(address indexed entity, uint finalScore);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only the owner can perform this action");
+        _;
+    }
+
+    modifier onlyAuthorizedStakeholder(StakeholderRegistrationContract.Role _role) {
+        StakeholderRegistrationContract.Stakeholder memory stakeholder = stakeholderRegistrationContract.getStakeholder(msg.sender);
+        require(stakeholder.role == _role, "Not authorized for this action");
+        _;
+    }
+
+    constructor(address _stakeholderRegistrationContract, address _transactionsAndLogisticsManagementContract, address _complianceMonitoringContract) {
+        owner = msg.sender;
+        stakeholderRegistrationContract = StakeholderRegistrationContract(_stakeholderRegistrationContract);
+        transactionsAndLogisticsManagementContract = TransactionsAndLogisticsManagementContract(_transactionsAndLogisticsManagementContract);
+        complianceMonitoringContract = ComplianceMonitoringContract(_complianceMonitoringContract);
+    }
+
+    function updateProductQuality(address _entity, uint _score) public {
+        StakeholderRegistrationContract.Stakeholder memory stakeholder = stakeholderRegistrationContract.getStakeholder(msg.sender);
+        require(stakeholder.role == StakeholderRegistrationContract.Role.QualityAssuranceManager || stakeholder.role == StakeholderRegistrationContract.Role.SMEManager, "Not authorized for this action");
+        reputationScores[_entity].productQuality = _score;
+        emit ProductQualityUpdated(_entity, _score);
+    }
+
+    function updateSupplierFeedback(address _entity, uint _score) public {
+        StakeholderRegistrationContract.Stakeholder memory stakeholder = stakeholderRegistrationContract.getStakeholder(msg.sender);
+        require(stakeholder.role == StakeholderRegistrationContract.Role.SupplierRelationshipManager || stakeholder.role == StakeholderRegistrationContract.Role.SMEManager, "Not authorized for this action");
+        reputationScores[_entity].supplierFeedback = _score;
+        emit SupplierFeedbackUpdated(_entity, _score);
+    }
+
+    function calculateReputationScore(address _entity) public {
+        ReputationScore storage score = reputationScores[_entity];
+
+        score.deliveryTimeliness = transactionsAndLogisticsManagementContract.getAverageDeliveryTimelinessScore(_entity);
+        score.transactionVolume = transactionsAndLogisticsManagementContract.getTotalTransactionVolumeScore(_entity);
+        score.esgScore = complianceMonitoringContract.getESGScore(_entity);
+
+        uint totalWeightedScore = (score.deliveryTimeliness * 25) + (score.transactionVolume * 15) + (score.esgScore * 30) + (score.productQuality * 20) + (score.supplierFeedback * 10);
+        score.finalScore = totalWeightedScore / 100;
+
+        emit ReputationScoreCalculated(_entity, score.finalScore);
+    }
+
+    function getReputationScore(address _entity) public view returns (uint) {
+        return reputationScores[_entity].finalScore;
+    }
+
+    function getReputationDetails(address _entity) public view returns (ReputationScore memory) {
+        return reputationScores[_entity];
+    }
+}
