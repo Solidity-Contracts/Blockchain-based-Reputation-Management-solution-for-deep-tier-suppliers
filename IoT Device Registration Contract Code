@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "./StakeholderRegistration.sol";
+
+contract IoTDeviceRegistration {
+    address public owner;
+    StakeholderRegistrationContract stakeholderRegistrationContract;
+
+    struct IoTDevice {
+        address deviceAddress;
+        string description;
+        address registeredBy;
+    }
+
+    mapping(address => IoTDevice) public devices;
+    address[] public deviceAddresses;
+
+    event DeviceRegistered(address indexed deviceAddress, string description, address registeredBy);
+
+    modifier onlyAuthorizedRegistrar() {
+        StakeholderRegistrationContract.Stakeholder memory stakeholder = stakeholderRegistrationContract.getStakeholder(msg.sender);
+        require(stakeholder.role == StakeholderRegistrationContract.Role.ESGAnalyst || stakeholder.role == StakeholderRegistrationContract.Role.SMEManager, "Not authorized to register devices");
+        _;
+    }
+
+    constructor(address _stakeholderRegistrationContract) {
+        owner = msg.sender;
+        stakeholderRegistrationContract = StakeholderRegistrationContract(_stakeholderRegistrationContract);
+    }
+
+    function registerDevice(address _deviceAddress, string memory _description) public onlyAuthorizedRegistrar {
+        require(devices[_deviceAddress].deviceAddress == address(0), "Device is already registered");
+
+        devices[_deviceAddress] = IoTDevice({
+            deviceAddress: _deviceAddress,
+            description: _description,
+            registeredBy: msg.sender
+        });
+
+        deviceAddresses.push(_deviceAddress);
+
+        emit DeviceRegistered(_deviceAddress, _description, msg.sender);
+    }
+
+    function getDevice(address _deviceAddress) public view returns (IoTDevice memory) {
+        return devices[_deviceAddress];
+    }
+}
