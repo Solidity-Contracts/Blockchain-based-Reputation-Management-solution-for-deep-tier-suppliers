@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "./StakeholderRegistration.sol";
+
+contract TransactionsAndLogisticsManagementContract {
+    StakeholderRegistrationContract public stakeholderRegistration;
+
+    // Define the structure for Delivery and Transaction data
+    struct Delivery {
+        uint256 deliveryId;
+        address seller;
+        address buyer;
+        uint256 scheduledTime;
+        uint256 actualDeliveryTime;
+        bool deliveredOnTime;
+        bool logisticsChecked;
+    }
+
+    struct Transaction {
+        uint256 transactionId;
+        address buyer;
+        address seller;
+        uint256 volume;
+    }
+
+    // Mappings to store deliveries and transactions
+    mapping(uint256 => Delivery) public deliveries;
+    mapping(uint256 => Transaction) public transactions;
+
+    uint256 public nextDeliveryId;
+    uint256 public nextTransactionId;
+
+    // Mappings to store scores
+    mapping(address => uint256) public deliveryTimelinessScores;
+    mapping(address => uint256) public transactionVolumeScores;
+    mapping(address => uint256) public deliveryCounts;
+    mapping(address => uint256) public totalTransactionVolumes;
+
+    event DeliveryScheduled(uint256 deliveryId, address indexed buyer, address indexed seller, uint256 scheduledTime);
+    event DeliveryCompleted(uint256 deliveryId, address indexed seller, bool deliveredOnTime, uint256 actualDeliveryTime);
+    event TransactionRecorded(uint256 transactionId, address indexed buyer, address indexed seller, uint256 volume);
+    event LogisticsChecked(uint256 deliveryId, address indexed checker);
+
+    constructor(address _stakeholderRegistrationAddress) {
+        stakeholderRegistration = StakeholderRegistrationContract(_stakeholderRegistrationAddress);
+    }
+
+    modifier onlyRegisteredStakeholders(address _address, StakeholderRegistrationContract.Role requiredRole1, StakeholderRegistrationContract.Role requiredRole2) {
+        StakeholderRegistrationContract.Stakeholder memory stakeholder = stakeholderRegistration.getStakeholder(_address);
+        require(stakeholder.ethAddress != address(0), "Only registered stakeholders can perform this action");
+        require(stakeholder.role == requiredRole1 || stakeholder.role == requiredRole2, "Invalid stakeholder role for this action");
+        _;
+    }
+
+    // Function to schedule a delivery
+    function scheduleDelivery(address _seller, uint256 _scheduledTime) public onlyRegisteredStakeholders(msg.sender, StakeholderRegistrationContract.Role.SupplyChainManager, StakeholderRegistrationContract.Role.SMEManager) {
+        require(_seller != address(0), "Invalid seller address");
+
+        deliveries[nextDeliveryId] = Delivery({
+            deliveryId: nextDeliveryId,
+            seller: _seller,
+            buyer: msg.sender,
+            scheduledTime: _scheduledTime,
+            actualDeliveryTime: 0,
+            deliveredOnTime: false,
+            logisticsChecked: false
+        });
+
+        emit DeliveryScheduled(nextDeliveryId, msg.sender, _seller, _scheduledTime);
+
+        nextDeliveryId++;
+    }
+
+    // Function for Logistics Coordinator or SME Manager to check logistics readiness
+    function checkLogistics(uint256 _deliveryId) public onlyRegisteredStakeholders(msg.sender, StakeholderRegistrationContract.Role.LogisticsCoordinator, StakeholderRegistrationContract.Role.SMEManager) {
+        Delivery storage delivery = deliveries[_deliveryId];
+        require(delivery.scheduledTime != 0, "Scheduled time not set");
+
+        delivery.logisticsChecked = true;
+        
+        emit LogisticsChecked(_deliveryId, msg.sender);
+    }
+
+    // Function for Timer Oracle to confirm delivery timeliness
+    function completeDelivery(uint256 _deliveryId, uint256 _currentTimestamp) public onlyRegisteredStakeholders(msg.sender, StakeholderRegistrationContract.Role.TimerOracle, StakeholderRegistrationContract.Role.TimerOracle) {
+        Delivery storage delivery = deliveries[_deliveryId];
+        require(delivery.scheduledTime != 0, "Scheduled time not set");
+        require(delivery.logisticsChecked, "Logistics not checked");
+
+        delivery.actualDeliveryTime = _currentTimestamp;
+        delivery.deliveredOnTime = (_currentTimestamp <= delivery.scheduledTime);
+
+        address seller = delivery.seller;
+        deliveryCounts[seller]++;
+        if (delivery.deliveredOnTime) {
+            deliveryTimelinessScores[seller]++;
+        }
+
+        emit DeliveryCompleted(_deliveryId, seller, delivery.deliveredOnTime, _currentTimestamp);
+    }
+
+    // Function to create a procurement order
+    function createProcurementOrder(address _seller, uint256 _volume) public onlyRegisteredStakeholders(msg.sender, StakeholderRegistrationContract.Role.ProcurementOfficer, StakeholderRegistrationContract.Role.SMEManager) {
+        require(_seller != address(0), "Invalid seller address");
+
+        // Record the transaction
+        transactions[nextTransactionId] = Transaction({
+            transactionId: nextTransactionId,
+            buyer: msg.sender,
+            seller: _seller,
+            volume: _volume
+        });
+
+        transactionVolumeScores[_seller]++;
+        totalTransactionVolumes[_seller] += _volume;
+
+        emit TransactionRecorded(nextTransactionId, msg.sender, _seller, _volume);
+
+        nextTransactionId++;
+    }
+
+    // Function to get the average delivery timeliness score
+    function getAverageDeliveryTimelinessScore(address _seller) public view returns (uint256) {
+        require(deliveryCounts[_seller] > 0, "No deliveries for this seller");
+        return (deliveryTimelinessScores[_seller] * 100) / deliveryCounts[_seller];
+    }
+
+    // Function to get the total transaction volume score
+    function getTotalTransactionVolumeScore(address _seller) public view returns (uint256) {
+        return totalTransactionVolumes[_seller];
+    }
+}
