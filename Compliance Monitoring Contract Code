@@ -1,0 +1,113 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "./StakeholderRegistration.sol";
+import "./IoTDeviceRegistration.sol";
+
+contract ComplianceMonitoringContract {
+    address public owner;
+    StakeholderRegistrationContract stakeholderRegistrationContract;
+    IoTDeviceRegistration ioTDeviceRegistration;
+
+    struct ESGScore {
+        uint thirdPartyRating;
+        uint certificationVerification;
+        uint internalAssessment;
+        uint realTimeData;
+        uint finalScore;
+        string AuditDocumentHash;
+        string CertificationDocumentHash;
+        string InternalAssessmentDocumentHash;
+    }
+
+    mapping(address => ESGScore) public esgScores;
+
+    struct TempData {
+        uint data;
+        uint timestamp;
+        address deviceAddress;
+    }
+
+    mapping(address => TempData) public tempDataStorage;
+
+    event ESGScoreCalculated(address indexed entity, uint finalScore);
+    event ThirdPartyRatingUpdated(address indexed entity, uint rating, string documentHash);
+    event CertificationVerificationUpdated(address indexed entity, uint rating, string documentHash);
+    event InternalAssessmentUpdated(address indexed entity, uint rating, string documentHash);
+    event RealTimeDataSubmitted(address indexed entity, uint data, uint timestamp, address deviceAddress);
+    event RealTimeDataValidated(address indexed entity, uint data, uint timestamp);
+
+   modifier onlyOwner() {
+        require(msg.sender == owner, "Only the owner can perform this action");
+        _;
+    }
+
+     modifier onlyAuthorizedStakeholder(StakeholderRegistrationContract.Role _role) {
+        StakeholderRegistrationContract.Stakeholder memory stakeholder = stakeholderRegistrationContract.getStakeholder(msg.sender);
+        require(stakeholder.role == _role, "Not authorized for this action");
+        _;
+    }
+
+    modifier onlyRegisteredDevice(address _deviceAddress) {
+        IoTDeviceRegistration.IoTDevice memory device = ioTDeviceRegistration.getDevice(_deviceAddress);
+        require(device.deviceAddress != address(0), "Device is not registered");
+        _;
+    }
+
+    constructor(address _stakeholderRegistrationContract, address _ioTDeviceRegistration) {
+        owner = msg.sender;
+        stakeholderRegistrationContract = StakeholderRegistrationContract(_stakeholderRegistrationContract);
+        ioTDeviceRegistration = IoTDeviceRegistration(_ioTDeviceRegistration);
+    }
+
+   function updateThirdPartyRating(address _entity, uint _rating, string memory _documentHash) public onlyAuthorizedStakeholder(StakeholderRegistrationContract.Role.Auditor) {
+        esgScores[_entity].thirdPartyRating = _rating;
+        esgScores[_entity].AuditDocumentHash = _documentHash;
+        emit ThirdPartyRatingUpdated(_entity, _rating, _documentHash);
+    }
+
+    function updateCertificationVerification(address _entity, uint _rating, string memory _documentHash) public onlyAuthorizedStakeholder(StakeholderRegistrationContract.Role.CertificationBody) {
+        esgScores[_entity].certificationVerification = _rating;
+        esgScores[_entity].CertificationDocumentHash = _documentHash;
+        emit CertificationVerificationUpdated(_entity, _rating, _documentHash);
+    }
+
+    function updateInternalAssessment(uint _rating, string memory _documentHash) public {
+        StakeholderRegistrationContract.Stakeholder memory stakeholder = stakeholderRegistrationContract.getStakeholder(msg.sender);
+        require(stakeholder.role == StakeholderRegistrationContract.Role.ESGAnalyst || stakeholder.role == StakeholderRegistrationContract.Role.SMEManager, "Not authorized for this action");
+        esgScores[msg.sender].internalAssessment = _rating;
+        esgScores[msg.sender].InternalAssessmentDocumentHash = _documentHash;
+        emit InternalAssessmentUpdated(msg.sender, _rating, _documentHash);
+    }
+
+    function submitRealTimeData(address _entity, uint _data, uint _timestamp) public onlyRegisteredDevice(msg.sender) {
+        require(_timestamp <= block.timestamp, "Invalid timestamp");
+        tempDataStorage[_entity] = TempData({
+            data: _data,
+            timestamp: _timestamp,
+            deviceAddress: msg.sender
+        });
+        emit RealTimeDataSubmitted(_entity, _data, _timestamp, msg.sender);
+    }
+
+    function validateRealTimeData(address _entity, uint _timestamp) public onlyAuthorizedStakeholder(StakeholderRegistrationContract.Role.TimerOracle) {
+        TempData storage tempData = tempDataStorage[_entity];
+        require(tempData.timestamp == _timestamp, "Timestamp mismatch");
+        esgScores[_entity].realTimeData = tempData.data;
+        emit RealTimeDataValidated(_entity, tempData.data, tempData.timestamp);
+    }
+
+
+    function calculateESGScore(address _entity) public {
+       esgScores[_entity].finalScore = (esgScores[_entity].thirdPartyRating * 25 + esgScores[_entity].certificationVerification * 25 + esgScores[_entity].internalAssessment * 25 + esgScores[_entity].realTimeData * 25)/100; 
+       emit ESGScoreCalculated(_entity, esgScores[_entity].finalScore);
+    }
+
+    function getESGScore(address _entity) public view returns (uint) {
+        return esgScores[_entity].finalScore;
+    }
+
+    function getESGDetails(address _entity) public view returns (ESGScore memory) {
+        return esgScores[_entity];
+    }
+}
