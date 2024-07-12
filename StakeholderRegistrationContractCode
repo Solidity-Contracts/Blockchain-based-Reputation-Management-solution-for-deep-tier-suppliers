@@ -1,0 +1,109 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract StakeholderRegistrationContract {
+    // Define the owner (ESG Regulatory Body)
+    address public owner;
+
+    // Enumerations for roles and tiers
+     enum Role { Auditor, CertificationBody, ESGAnalyst, SupplyChainManager, ProcurementOfficer, QualityAssuranceManager, LogisticsCoordinator, SupplierRelationshipManager, SMEManager, TimerOracle }
+     enum Tier { None, Anchor, Tier1, Tier2, Tier3, TierN }
+
+    // Struct to hold stakeholder details
+    struct Stakeholder {
+        address ethAddress;
+        string description;
+        Role role;
+        Tier tier;
+        bool complianceStatus; // true if compliant, false otherwise
+    }
+
+    // Mappings to store stakeholders based on their role and tier
+    mapping(address => Stakeholder) public stakeholders;
+    address[] public stakeholderAddresses;
+
+    // Event to be emitted when a stakeholder is registered
+    event StakeholderRegistered(
+        address indexed ethAddress,
+        string role,
+        string tier,
+        string description,
+        bool complianceStatus
+    );
+
+    // Modifier to restrict functions to the owner only
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only the ESG Regulatory Body can perform this action");
+        _;
+    }
+
+    // Constructor to set the owner
+    constructor() {
+        owner = msg.sender;
+    }
+
+    // Generic function to register any stakeholder
+    function registerStakeholder(
+        address _ethAddress,
+        string memory _description,
+        Role _role,
+        Tier _tier,
+        bool _complianceStatus
+    ) public onlyOwner {
+        // Require that the stakeholder is not already registered
+        require(stakeholders[_ethAddress].ethAddress == address(0), "Stakeholder is already registered");
+
+        // Create a new stakeholder
+        stakeholders[_ethAddress] = Stakeholder({
+            ethAddress: _ethAddress,
+            description: _description,
+            role: _role,
+            tier: _tier,
+            complianceStatus: _complianceStatus
+        });
+
+        // Add to the list of stakeholder addresses
+        stakeholderAddresses.push(_ethAddress);
+
+        // Emit the registration event with string representations of the enums
+        emit StakeholderRegistered(
+            _ethAddress,
+            roleToString(_role),
+            tierToString(_tier),
+            _description,
+            _complianceStatus
+        );
+    }
+
+    // Function to get stakeholder details
+    function getStakeholder(address _ethAddress) public view returns (Stakeholder memory) {
+        require(stakeholders[_ethAddress].ethAddress != address(0), "Stakeholder not found");
+        return stakeholders[_ethAddress];
+    }
+
+    // Helper function to convert Role enum to string
+    function roleToString(Role _role) public pure returns (string memory) {
+        if (_role == Role.Auditor) return "Auditor";
+        if (_role == Role.CertificationBody) return "CertificationBody";
+        if (_role == Role.ESGAnalyst) return "ESGAnalyst";
+        if (_role == Role.SupplyChainManager) return "SupplyChainManager";
+        if (_role == Role.ProcurementOfficer) return "ProcurementOfficer";
+        if (_role == Role.QualityAssuranceManager) return "QualityAssuranceManager";
+        if (_role == Role.LogisticsCoordinator) return "LogisticsCoordinator";
+        if (_role == Role.SupplierRelationshipManager) return "SupplierRelationshipManager";
+        if (_role == Role.SMEManager) return "SMEManager";
+        if (_role == Role.TimerOracle) return "TimerOracle";
+        return "";
+    }
+
+    // Helper function to convert Tier enum to string
+    function tierToString(Tier _tier) public pure returns (string memory) {
+        if (_tier == Tier.None) return "None";
+        if (_tier == Tier.Anchor) return "Anchor";
+        if (_tier == Tier.Tier1) return "Tier1";
+        if (_tier == Tier.Tier2) return "Tier2";
+        if (_tier == Tier.Tier3) return "Tier3";
+        if (_tier == Tier.TierN) return "TierN";
+        return "";
+    }
+}
